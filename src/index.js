@@ -21,6 +21,8 @@ conexionDB();
 
 // Creamos una ruta de prueba
 app.get("/", (req, res) => {
+  // El req es el objeto que contiene la información que el cliente envia al servidor. (request/solicitud)
+  // El res es el objeto que usamos para enviar algo de vuelta al cliente. (response/respuesta)
   res.send(" API Batalla Cartas funcionando correctamente...");
 });
 
