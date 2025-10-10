@@ -1,0 +1,5 @@
+# No subas paquetes innecesarios
+node_modules
+
+# No subas las claves de configuracion
+.env*
