@@ -6,6 +6,9 @@ import { Server } from "socket.io"; // Conexión socket en tiempo real
 import cors from "cors"; // Permisos para conexion desde el frontend
 import dotenv from "dotenv"; // Para manejo de variables secretas
 import { conexionDB } from "./database.js"; // Uso de archivo de conexión
+import cartaRoutes from "./routes/cartaRoutes.js"
+import jugadorRoutes from "./routes/jugadorRoutes.js"
+import juegoRoutes from "./routes/juegoRoutes.js"
 
 dotenv.config(); // Carga las claves del archivo .env
 
@@ -26,11 +29,21 @@ app.get("/", (req, res) => {
   res.send(" API Batalla Cartas funcionando correctamente...");
 });
 
+// Rutas a usar...
+app.use("/api/juegos", juegoRoutes);
+app.use("/api/jugadores", jugadorRoutes);
+app.use("/api/cartas", cartaRoutes);
+
+
+
+
+
+
 // SOCKET.IO (Tiempo real)
-io.on("conexion", (socket) => {
+io.on("connection", (socket) => {
   console.log(" Jugador Conectado: ", socket.id);
 
-  socket.on("desconexión", () => {
+  socket.on("disconnect", () => {
     console.log(" Jugador desconectado: ", socket.id);
   });
 });
@@ -38,5 +51,5 @@ io.on("conexion", (socket) => {
 // Puerto
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log(` Servidor corriendo en http://localhost:${PORT} `);
+  console.log(`🤖 Servidor corriendo en http://localhost:${PORT} `);
 });

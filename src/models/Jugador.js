@@ -7,4 +7,4 @@ const JugadorSchema = new mongoose.Schema({
     perdidas: {type: Number, required: true, default: 0} 
 });
 
-export const Jugador = mongoose.model("Jugador", JugadorSchema);
+export const Jugador = mongoose.model("Jugador", JugadorSchema, "jugadores");

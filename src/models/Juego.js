@@ -11,4 +11,4 @@ const JuegoSchema = new mongoose.Schema({
     
 });
 // Exporto el modelo referenciado al esquema
-export const Juego = mongoose.model("Juego", JuegoSchema)
+export const Juego = mongoose.model("Juego", JuegoSchema, "juegos")

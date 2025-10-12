@@ -11,4 +11,10 @@ const CartaSchema = new mongoose.Schema({
     }
 });
 
-export const Carta = mongoose.model("Carta", CartaSchema);
+//Mongoose hará lo siguiente internamente:
+//Convertirá "Carta" a minúsculas: carta
+//Lo pluralizará: cartas
+//Buscará (o creará) una colección llamada cartas en tu base de datos
+//👉 Entonces, si tu colección real se llama cartas.
+
+export const Carta = mongoose.model("Carta", CartaSchema, "cartas");
