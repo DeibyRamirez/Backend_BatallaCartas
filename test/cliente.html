@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> Prueba Socket.IO - Batalla de Cartas </title>
+</head>
+
+<body>
+    <h1> Conexion Socket.IO </h1>
+    <p id="estado">Desconectado</p>
+
+    <button id="btnUnirse">Unirse al juego</button>
+    <button id="btnJugar"> Jugar Carta</button>
+
+    <ul id="mensajes"></ul>
+
+    <!-- Cliente Socket.IO -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        const socket = io("http://localhost:4000");
+        const estado = document.getElementById("estado");
+        const mensajes = document.getElementById("mensajes");
+
+        socket.on("connect", () => {
+            estado.textContent = "🟢 Conectado al servidor";
+            console.log("Conectado con ID: ", socket.id);
+        });
+
+        socket.on("disconnect", () => {
+            estado.textContent = "🔴 Desconectado";
+        });
+
+        // Eventos personalizados del servidor...
+        socket.on("unido", (data) => {
+            agregarMensaje(` Te uniste al juego ${data.codigoJuego}`);
+        });
+
+        socket.on("jugarCarta", (data) => {
+            agregarMensaje(` ${data.jugador} jugó la carta ${data.carta}`);
+        });
+
+        // Botones
+        document.getElementById("btnUnirse").addEventListener("click", () => {
+            socket.emit("unirseJuego", "sala123");
+        });
+
+        document.getElementById("btnJugar").addEventListener("click", () => {
+            socket.emit("jugarCarta", {
+                codigoJuego: "sala123",
+                jugador: "Jugador1",
+                carta: "Dragon de Fuego"
+            });
+        });
+
+        // Función para mostrar mensajes
+        function agregarMensaje(texto) {
+            const li = document.createElement("li");
+            li.textContent = texto;
+            mensajes.appendChild(li);
+        }
+
+    </script>
+
+</body>
+
+</html>
