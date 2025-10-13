@@ -1,15 +1,18 @@
 import mongoose from "mongoose";
 
-const CartaSchema = new mongoose.Schema({
-    nombre: {type: String, required: true},
-    imagen: {type: String, required: true},
+const CartaSchema = new mongoose.Schema(
+  {
+    nombre: { type: String, required: true },
+    imagen: { type: String, required: true },
     atributos: {
-        fuerza: {type: Number, required: true},
-        velocidad: {type: Number, required: true},
-        inteligencia: {type: Number, required: true},
-        rareza: {type: Number, required: true},
-    }
-});
+      fuerza: { type: Number, required: true },
+      velocidad: { type: Number, required: true },
+      inteligencia: { type: Number, required: true },
+      rareza: { type: Number, required: true },
+    },
+  },
+  { versionKey: false }
+);
 
 //Mongoose hará lo siguiente internamente:
 //Convertirá "Carta" a minúsculas: carta

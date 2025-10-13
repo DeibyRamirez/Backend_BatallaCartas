@@ -23,11 +23,12 @@
         const estado = document.getElementById("estado");
         const mensajes = document.getElementById("mensajes");
 
+        // Evento de conexión
         socket.on("connect", () => {
             estado.textContent = "🟢 Conectado al servidor";
             console.log("Conectado con ID: ", socket.id);
         });
-
+        // Evento de desconexión
         socket.on("disconnect", () => {
             estado.textContent = "🔴 Desconectado";
         });
@@ -37,11 +38,13 @@
             agregarMensaje(` Te uniste al juego ${data.codigoJuego}`);
         });
 
+        // Evento jugar una Carta...
         socket.on("jugarCarta", (data) => {
             agregarMensaje(` ${data.jugador} jugó la carta ${data.carta}`);
         });
+            
 
-        // Botones
+        // Botones -- el addEventListener es un oyente de eventos y usa el click para detectar interacciones.
         document.getElementById("btnUnirse").addEventListener("click", () => {
             socket.emit("unirseJuego", "sala123");
         });
@@ -55,6 +58,7 @@
         });
 
         // Función para mostrar mensajes
+        // Crea un elemento de lista (li) y lo agrega a la lista de mensajes (ul).
         function agregarMensaje(texto) {
             const li = document.createElement("li");
             li.textContent = texto;
