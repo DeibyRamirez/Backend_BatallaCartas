@@ -13,11 +13,11 @@ import { configurarSockets } from "./socket.js";
 import morgan from "morgan"; // Para ver las peticiones en consola
 
 dotenv.config(); // Carga las claves del archivo .env
-configurarSockets(io);
 
 const app = express(); // Permite el uso del paquete express para la creacion de las APIS
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
+configurarSockets(io);
 
 app.use(cors());
 app.use(express.json());

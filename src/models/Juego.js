@@ -1,25 +1,35 @@
+// models/Juego.js
 import mongoose from "mongoose";
 
-// Creando Esquema de igual a como deberia
 const JuegoSchema = new mongoose.Schema(
   {
-    codigo: { type: String, required: true },
-    estado: { type: String, required: true, default: "esperando" },
+    codigo: { type: String, required: true, unique: true },
+    estado: { type: String, default: "esperando" }, // esperando | jugando | finalizado
+    maxPlayers: { type: Number, default: 6 },
+    playCount: { type: Number, default: 4 },
     jugadores: [
       {
         jugadorId: { type: mongoose.Schema.Types.ObjectId, ref: "Jugador" },
         socketId: { type: String },
-        selectedCards: [{ type: mongoose.Schema.Types.ObjectId, ref: "Carta" }], // cartas elegidas para la batalla (K)
-        activo: { type: Boolean, default: true }, // si sigue en juego (no eliminado)
+        selectedCards: [{ type: mongoose.Schema.Types.ObjectId, ref: "Carta" }],
+        activo: { type: Boolean, default: true },
+        ganadorRondas: { type: Number, default: 0 },
+        cartasGanadas: [{ type: mongoose.Schema.Types.ObjectId, ref: "Carta" }],
       },
     ],
-    cartasEnBatalla: [{ type: mongoose.Schema.Types.ObjectId, ref: "Carta" }], // pozo temporal (empates)
-    maxPlayers: { type: Number, default: 6 }, // 6 o 8 (configurable)
-    playCount: { type: Number, default: 4 }, // cuántas cartas se jugarán por jugador en esa partida (K)
-    turnoIdx: { type: Number, default: 0 }, // índice del jugador que tiene turno para elegir atributo
-    createdAt: { type: Date, default: Date.now },
+    cartasEnBatalla: [
+      {
+        jugadorId: { type: mongoose.Schema.Types.ObjectId, ref: "Jugador" },
+        cartaId: { type: mongoose.Schema.Types.ObjectId, ref: "Carta" },
+        atributo: String,
+      },
+    ],
+    turnoIdx: { type: Number, default: 0 },
+    ganadorId: { type: mongoose.Schema.Types.ObjectId, ref: "Jugador" },
+    fechaInicio: { type: Date, default: Date.now },
+    fechaFin: Date,
   },
   { versionKey: false }
 );
-// Exporto el modelo referenciado al esquema
+
 export const Juego = mongoose.model("Juego", JuegoSchema, "juegos");

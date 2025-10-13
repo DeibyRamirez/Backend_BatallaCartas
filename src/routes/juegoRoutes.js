@@ -1,18 +1,18 @@
 import express from "express";
 import {
-  actualizarJuego,
-  buscarJuegoPorId,
-  buscarJuegos,
   crearJuego,
-  eliminarJuego,
+  listarJuegos,
+  obtenerJuego,
+  unirseJuego,
+  finalizarJuego
 } from "../controllers/juegoController.js";
 
 const router = express.Router();
 
 router.post("/", crearJuego);
-router.get("/", buscarJuegos);
-router.get("/:id", buscarJuegoPorId);
-router.put("/:id", actualizarJuego);
-router.delete("/:id", eliminarJuego);
+router.get("/", listarJuegos);
+router.get("/:codigo", obtenerJuego);
+router.post("/:codigo/unirse", unirseJuego);
+router.post("/:codigo/finalizar", finalizarJuego);
 
 export default router;

@@ -3,7 +3,8 @@ import { Jugador } from "../models/Jugador.js";
 // Crear un Jugador
 export const crearJugador = async (req, res) => {
   try {
-    const nuevoJugador = new Jugador(req.body);
+    const { nombre } = req.body;
+    const nuevoJugador = new Jugador({ nombre });
     await nuevoJugador.save();
     res.status(201).json(nuevoJugador);
   } catch (error) {

@@ -27,23 +27,28 @@ export const configurarSockets = (io) => {
         // Buscar jugador y darle cartas si aún no tiene
         let jugador = await Jugador.findById(jugadorId);
         if (!jugador) {
-          jugador = new Jugador({ _id: jugadorId, mano: [] });
-          await jugador.save();
+          return socket.emit("errorEvento", {
+            message: "Jugador no encontrado en la base de datos",
+          });
         }
 
         // Si el jugador no tiene cartas, se le asignan 10 al azar
         if (jugador.mano.length === 0) {
           const todasLasCartas = await Carta.find();
-          const seleccionadas = todasLasCartas.sort(() => 0.5 - Math.random()).slice(0, 10);
-          jugador.mano = seleccionadas.map(c => c._id);
+          const seleccionadas = todasLasCartas
+            .sort(() => 0.5 - Math.random())
+            .slice(0, 10);
+          jugador.mano = seleccionadas.map((c) => c._id);
           await jugador.save();
         }
 
         // Añadir jugador al juego
-        const yaEnJuego = juego.jugadores.find(j => j.jugadorId?.toString() === jugadorId);
+        const yaEnJuego = juego.jugadores.find(
+          (j) => j.jugadorId?.toString() === jugadorId
+        );
         if (!yaEnJuego) {
           juego.jugadores.push({
-            jugadorId,
+            jugadorId: jugador._id,
             socketId: socket.id,
             selectedCards: [],
             activo: true,
@@ -56,7 +61,9 @@ export const configurarSockets = (io) => {
         console.log(`👤 Jugador ${jugadorId} se unió a la partida ${codigo}`);
       } catch (error) {
         console.error(error);
-        socket.emit("errorEvento", { message: "Error al unirse al juego" });
+        socket.emit("errorEvento", {
+          message: "Error al unirse al juego en archivo socket.js",
+        });
       }
     });
 
@@ -66,20 +73,33 @@ export const configurarSockets = (io) => {
     socket.on("seleccionarCartas", async ({ codigo, jugadorId, cartas }) => {
       try {
         const juego = await Juego.findOne({ codigo });
-        if (!juego) return socket.emit("errorEvento", { message: "Juego no encontrado" });
+        if (!juego)
+          return socket.emit("errorEvento", { message: "Juego no encontrado" });
 
         const jugador = await Jugador.findById(jugadorId);
-        const cartasInvalidas = cartas.filter(c => !jugador.mano.map(id => id.toString()).includes(c));
+        const cartasInvalidas = cartas.filter(
+          (c) => !jugador.mano.map((id) => id.toString()).includes(c)
+        );
         if (cartasInvalidas.length > 0)
-          return socket.emit("errorEvento", { message: "Cartas inválidas seleccionadas" });
+          return socket.emit("errorEvento", {
+            message: "Cartas inválidas seleccionadas",
+          });
 
-        const jugadorEnJuego = juego.jugadores.find(j => j.jugadorId.toString() === jugadorId);
-        if (!jugadorEnJuego) return socket.emit("errorEvento", { message: "Jugador no está en la partida" });
+        const jugadorEnJuego = juego.jugadores.find(
+          (j) => j.jugadorId.toString() === jugadorId
+        );
+        if (!jugadorEnJuego)
+          return socket.emit("errorEvento", {
+            message: "Jugador no está en la partida",
+          });
 
         jugadorEnJuego.selectedCards = cartas;
         await juego.save();
 
-        io.to(codigo).emit("cartasSeleccionadas", { jugadorId, cantidad: cartas.length });
+        io.to(codigo).emit("cartasSeleccionadas", {
+          jugadorId,
+          cantidad: cartas.length,
+        });
       } catch (err) {
         console.error(err);
       }
@@ -88,39 +108,52 @@ export const configurarSockets = (io) => {
     // =============================
     // JUGAR CARTA
     // =============================
-    socket.on("jugarCarta", async ({ codigo, jugadorId, cartaId, atributo }) => {
-      const juego = await Juego.findOne({ codigo });
-      if (!juego) return socket.emit("errorEvento", { message: "Juego no existe" });
+    socket.on(
+      "jugarCarta",
+      async ({ codigo, jugadorId, cartaId, atributo }) => {
+        const juego = await Juego.findOne({ codigo });
+        if (!juego)
+          return socket.emit("errorEvento", { message: "Juego no existe" });
 
-      // Validar turno
-      const jugadorActual = juego.jugadores[juego.turnoIdx];
-      if (jugadorActual.jugadorId.toString() !== jugadorId)
-        return socket.emit("errorEvento", { message: "No es tu turno" });
+        // Validar turno
+        const jugadorActual = juego.jugadores[juego.turnoIdx];
+        if (jugadorActual.jugadorId.toString() !== jugadorId)
+          return socket.emit("errorEvento", { message: "No es tu turno" });
 
-      // Validar carta
-      const jugadorEntry = juego.jugadores.find(p => p.jugadorId.toString() === jugadorId);
-      if (!jugadorEntry.selectedCards.map(s => s.toString()).includes(cartaId))
-        return socket.emit("errorEvento", { message: "Carta no válida" });
+        // Validar carta
+        const jugadorEntry = juego.jugadores.find(
+          (p) => p.jugadorId.toString() === jugadorId
+        );
+        if (
+          !jugadorEntry.selectedCards.map((s) => s.toString()).includes(cartaId)
+        )
+          return socket.emit("errorEvento", { message: "Carta no válida" });
 
-      // Quitar carta del array de selección
-      jugadorEntry.selectedCards = jugadorEntry.selectedCards.filter(c => c.toString() !== cartaId);
+        // Quitar carta del array de selección
+        jugadorEntry.selectedCards = jugadorEntry.selectedCards.filter(
+          (c) => c.toString() !== cartaId
+        );
 
-      // Agregar la carta a cartasEnBatalla
-      juego.cartasEnBatalla.push({ jugadorId, cartaId, atributo });
-      await juego.save();
-
-      io.to(codigo).emit("cartaJugada", { jugadorId, cartaId });
-
-      // Si ya todos jugaron una carta -> resolver ronda
-      if (juego.cartasEnBatalla.length >= juego.jugadores.filter(j => j.activo).length) {
-        await resolverRonda(io, juego, atributo);
-      } else {
-        // Pasar turno
-        juego.turnoIdx = (juego.turnoIdx + 1) % juego.jugadores.length;
+        // Agregar la carta a cartasEnBatalla
+        juego.cartasEnBatalla.push({ jugadorId, cartaId, atributo });
         await juego.save();
-        io.to(codigo).emit("siguienteTurno", { turnoIdx: juego.turnoIdx });
+
+        io.to(codigo).emit("cartaJugada", { jugadorId, cartaId });
+
+        // Si ya todos jugaron una carta -> resolver ronda
+        if (
+          juego.cartasEnBatalla.length >=
+          juego.jugadores.filter((j) => j.activo).length
+        ) {
+          await resolverRonda(io, juego, atributo);
+        } else {
+          // Pasar turno
+          juego.turnoIdx = (juego.turnoIdx + 1) % juego.jugadores.length;
+          await juego.save();
+          io.to(codigo).emit("siguienteTurno", { turnoIdx: juego.turnoIdx });
+        }
       }
-    });
+    );
 
     // =============================
     // RESOLVER RONDA
@@ -141,13 +174,13 @@ export const configurarSockets = (io) => {
           });
         }
 
-        const maxValor = Math.max(...valores.map(v => v.valor));
-        const ganadores = valores.filter(v => v.valor === maxValor);
+        const maxValor = Math.max(...valores.map((v) => v.valor));
+        const ganadores = valores.filter((v) => v.valor === maxValor);
 
         if (ganadores.length === 1) {
           // GANADOR
           const ganador = ganadores[0];
-          const cartasGanadas = valores.map(v => v.cartaId);
+          const cartasGanadas = valores.map((v) => v.cartaId);
 
           await Jugador.findByIdAndUpdate(ganador.jugadorId, {
             $push: { mano: { $each: cartasGanadas } },
@@ -168,7 +201,7 @@ export const configurarSockets = (io) => {
           await juego.save({ session });
           await session.commitTransaction();
           io.to(juego.codigo).emit("empate", {
-            jugadores: ganadores.map(g => g.jugadorId),
+            jugadores: ganadores.map((g) => g.jugadorId),
             atributo: nuevoAtributo,
           });
         }
@@ -188,11 +221,15 @@ export const configurarSockets = (io) => {
       session.startTransaction();
       try {
         const juego = await Juego.findOne({ codigo }).session(session);
-        const jugador = juego.jugadores.find(j => j.jugadorId.toString() === jugadorId);
+        const jugador = juego.jugadores.find(
+          (j) => j.jugadorId.toString() === jugadorId
+        );
         if (!jugador) return;
 
         jugador.activo = false;
-        await Jugador.findByIdAndUpdate(jugadorId, { $set: { eliminado: true } }).session(session);
+        await Jugador.findByIdAndUpdate(jugadorId, {
+          $set: { eliminado: true },
+        }).session(session);
 
         await juego.save({ session });
         await session.commitTransaction();
