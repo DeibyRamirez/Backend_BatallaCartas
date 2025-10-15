@@ -22,9 +22,25 @@ export const buscarJugador = async (req, res) => {
   }
 };
 
+// Buscar jugador por nombre
+export const buscarJugadorPorNombre = async (req, res) => {
+  try {
+    const { nombre } = req.params;
+    const jugador = await Jugador.findOne({ nombre: nombre }).populate("mano");
+    
+    if (!jugador) {
+      return res.status(404).json({ message: "Jugador no encontrado" });
+    }
+    
+    res.status(200).json(jugador);
+  } catch (error) {
+    res.status(500).json({ message: "Error al buscar jugador", error: error.message });
+  }
+};
+
 //Bucar Jugador por Id
 export const buscarJugadorPorId = async (req, res) => {
-  const jugador = await Jugador.findById(req.params.id);
+  const jugador = await Jugador.findById(req.params.id).populate("mano"); // El populate es para traer las cartas relacionadas toda la info
   res.status(200).json(jugador);
 
   if (!juego) return res.status(400).json({ message: "Jugador no encontrado" });

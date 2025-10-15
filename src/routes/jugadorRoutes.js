@@ -4,6 +4,7 @@ import {
   actualizarJugador,
   buscarJugador,
   buscarJugadorPorId,
+  buscarJugadorPorNombre,
   crearJugador,
   eliminarJugador,
 } from "../controllers/jugadorController.js";
@@ -12,6 +13,7 @@ const router = express.Router();
 
 router.post("/", crearJugador);
 router.get("/", buscarJugador);
+router.get("/nombre/:nombre", buscarJugadorPorNombre);
 router.get("/:id", buscarJugadorPorId);
 router.put("/:id", actualizarJugador);
 router.delete("/:id", eliminarJugador);
