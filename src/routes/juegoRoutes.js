@@ -4,21 +4,24 @@ import {
   listarJuegos,
   obtenerJuego,
   unirseJuego,
-  finalizarJuego,
-  jugarCarta,
-  seleccionarAtributo,
+  apostarCarta,
   resolverRonda,
+  finalizarJuego,
 } from "../controllers/juegoController.js";
 
 const router = express.Router();
 
+// Rutas básicas del juego
 router.post("/", crearJuego);
 router.get("/", listarJuegos);
 router.get("/:codigo", obtenerJuego);
 router.post("/:codigo/unirse", unirseJuego);
-router.post("/:codigo/finalizar", finalizarJuego);
-router.post("/:codigo/jugar-carta", jugarCarta);
-router.post("/:codigo/seleccionar-atributo", seleccionarAtributo);
+
+// Rutas de la nueva lógica de apuestas
+router.post("/:codigo/apostar-carta", apostarCarta);
 router.post("/:codigo/resolver-ronda", resolverRonda);
+
+// Finalizar juego
+router.post("/:codigo/finalizar", finalizarJuego);
 
 export default router;

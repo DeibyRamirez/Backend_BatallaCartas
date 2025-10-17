@@ -8,11 +8,9 @@ export const configurarSockets = (io) => {
     console.log(`🟢 Jugador conectado: ${socket.id}`);
 
     socket.on("unirseLobby", async (jugadorId) => {
-      // Actualizar datos del jugador
       const jugador = await Jugador.findById(jugadorId);
       socket.emit("jugadorActualizado", jugador);
 
-      // Enviar total de cartas
       const cartas = await Carta.find();
       socket.emit("cartasActualizadas", { total: cartas.length });
     });
@@ -250,14 +248,14 @@ export const configurarSockets = (io) => {
         if (todosSeleccionaron && juego.estado === "seleccionando") {
           juego.estado = "jugando";
           juego.turnoIdx = 0;
-          juego.cartasEnBatalla = [];
-          juego.atributoActual = null;
+          juego.apuestas = [];
+          juego.numeroGanador = null;
           await juego.save();
 
           io.to(codigo).emit("juegoIniciado", {
-            mensaje: "¡Todos han seleccionado! El juego comienza.",
+            mensaje:
+              "¡Todos han seleccionado! Ahora apuesten sus cartas con un número del 1 al 10.",
             turnoIdx: 0,
-            jugadorId: juego.jugadores[0].jugadorId.toString(),
           });
 
           console.log(`🎮 Juego ${codigo} comenzó`);
@@ -268,6 +266,139 @@ export const configurarSockets = (io) => {
           message: `Error al seleccionar cartas: ${err.message}`,
         });
       }
+    });
+
+    // =============================
+    // APOSTAR CARTA CON NÚMERO
+    // =============================
+    // En configurarSockets dentro de io.on("connection", (socket) => { ... })
+
+    // Después del evento "apostarCarta"
+    socket.on(
+      "apostarCarta",
+      async ({ codigo, jugadorId, cartaId, numero }) => {
+        try {
+          console.log(
+            `🎲 Apuesta: jugador ${jugadorId}, carta ${cartaId}, número ${numero}`
+          );
+
+          const juego = await Juego.findOne({ codigo });
+          if (!juego) {
+            return socket.emit("errorEvento", {
+              message: "Juego no encontrado",
+            });
+          }
+
+          // Emitir a todos que este jugador apostó (incluyendo el número si es visible)
+          io.to(codigo).emit("cartaApostada", {
+            jugadorId,
+            cartaId,
+            numero,
+          });
+
+          // Verificar si todos apostaron para resolver automáticamente
+          if (juego.todosApostaron()) {
+            const resultado = await resolverRondaInterna(juego);
+            io.to(codigo).emit("rondaResuelta", resultado);
+          }
+
+          console.log(`✅ Apuesta registrada para ${jugadorId}`);
+        } catch (error) {
+          console.error("❌ Error en apostarCarta:", error);
+          socket.emit("errorEvento", { message: "Error al procesar apuesta" });
+        }
+      }
+    );
+
+    // Nueva función para resolver la ronda internamente y devolver el resultado
+    async function resolverRondaInterna(juego) {
+      const numeroGanador = Math.floor(Math.random() * 10) + 1;
+      juego.numeroGanador = numeroGanador;
+
+      const ganadores = juego.apuestas.filter(
+        (a) => a.numero === numeroGanador
+      );
+      const perdedores = juego.apuestas.filter(
+        (a) => a.numero !== numeroGanador
+      );
+
+      let resultado = {
+        numeroGanador,
+        ganadores: [],
+        perdedores: [],
+        mensaje: "",
+      };
+
+      if (ganadores.length === 0) {
+        resultado.mensaje =
+          "Nadie acertó el número. Todos recuperan sus cartas.";
+        resultado.perdedores = juego.apuestas.map((a) => ({
+          jugadorId: a.jugadorId.toString(),
+          numero: a.numero,
+        }));
+      } else {
+        for (const ganador of ganadores) {
+          const jugadorGanador = await Jugador.findById(ganador.jugadorId);
+          const cartasGanadas = [];
+
+          for (const perdedor of perdedores) {
+            const jugadorPerdedor = await Jugador.findById(perdedor.jugadorId);
+            jugadorPerdedor.mano = jugadorPerdedor.mano.filter(
+              (c) => c.toString() !== perdedor.cartaId.toString()
+            );
+            jugadorGanador.mano.push(perdedor.cartaId);
+            cartasGanadas.push(perdedor.cartaId.toString());
+            await jugadorPerdedor.save();
+
+            if (jugadorPerdedor.mano.length === 0) {
+              const jugadorEnJuego = juego.jugadores.find(
+                (j) =>
+                  j.jugadorId._id.toString() === perdedor.jugadorId.toString()
+              );
+              if (jugadorEnJuego) jugadorEnJuego.activo = false;
+            }
+          }
+
+          await jugadorGanador.save();
+          resultado.ganadores.push({
+            jugadorId: ganador.jugadorId.toString(),
+            numero: ganador.numero,
+            cartasGanadas: cartasGanadas.length,
+          });
+        }
+
+        resultado.perdedores = perdedores.map((p) => ({
+          jugadorId: p.jugadorId.toString(),
+          numero: p.numero,
+        }));
+
+        resultado.mensaje =
+          ganadores.length === 1
+            ? `¡Jugador acertó el número ${numeroGanador}! Ganó ${perdedores.length} carta(s)`
+            : `¡${ganadores.length} jugadores acertaron el número ${numeroGanador}!`;
+      }
+
+      juego.apuestas = [];
+      juego.numeroGanador = null;
+      juego.turnoIdx = (juego.turnoIdx + 1) % juego.jugadores.length;
+
+      const jugadoresActivosRestantes = juego.jugadores.filter((j) => j.activo);
+      if (jugadoresActivosRestantes.length === 1) {
+        juego.estado = "finalizado";
+        juego.ganadorId = jugadoresActivosRestantes[0].jugadorId._id;
+      }
+
+      await juego.save();
+      return resultado;
+    }
+
+    // Manejar la desconexión para limpiar el socketId
+    socket.on("disconnect", () => {
+      console.log(`🔴 Jugador desconectado: ${socket.id}`);
+      Juego.updateOne(
+        { "jugadores.socketId": socket.id },
+        { $set: { "jugadores.$.socketId": null } }
+      ).exec();
     });
 
     // =============================
@@ -343,29 +474,6 @@ export const configurarSockets = (io) => {
         console.error("❌ Error al finalizar juego:", error);
       }
     }
-
-    // Agregar este handler en socket.js después de los demás eventos
-    socket.on(
-      "atributoSeleccionado",
-      async ({ codigo, jugadorId, atributo }) => {
-        try {
-          console.log(
-            `🎯 Atributo seleccionado: ${atributo} por ${jugadorId} en ${codigo}`
-          );
-
-          // Emitir a TODOS los demás jugadores en la sala (excepto el que lo envió)
-          socket.to(codigo).emit("atributoSeleccionado", {
-            atributo,
-            jugadorId,
-          });
-        } catch (error) {
-          console.error("❌ Error en atributoSeleccionado:", error);
-          socket.emit("errorEvento", {
-            message: "Error al procesar atributo seleccionado",
-          });
-        }
-      }
-    );
 
     // =============================
     // DESCONEXIÓN

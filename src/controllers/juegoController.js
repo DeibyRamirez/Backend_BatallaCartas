@@ -13,7 +13,8 @@ export const crearJuego = async (req, res) => {
       playCount,
       estado: "esperando",
       jugadores: [],
-      cartasEnBatalla: [],
+      apuestas: [], // [{jugadorId, cartaId, numero}]
+      numeroGanador: null,
       turnoIdx: 0,
     });
     await nuevoJuego.save();
@@ -48,10 +49,18 @@ export const obtenerJuego = async (req, res) => {
   }
 };
 
-export const jugarCarta = async (req, res) => {
+// NUEVA LÓGICA: Apostar carta con número
+export const apostarCarta = async (req, res) => {
   try {
     const { codigo } = req.params;
-    const { jugadorId, cartaId } = req.body;
+    const { jugadorId, cartaId, numero } = req.body;
+
+    // Validaciones
+    if (!numero || numero < 1 || numero > 10) {
+      return res
+        .status(400)
+        .json({ message: "El número debe estar entre 1 y 10" });
+    }
 
     const juego = await Juego.findOne({ codigo }).populate(
       "jugadores.jugadorId"
@@ -62,6 +71,7 @@ export const jugarCarta = async (req, res) => {
       return res.status(400).json({ message: "La partida no está en curso" });
     }
 
+    // Verificar que el jugador esté en la partida
     const jugadorEnPartida = juego.jugadores.find(
       (j) => j.jugadorId._id.toString() === jugadorId && j.activo
     );
@@ -69,105 +79,55 @@ export const jugarCarta = async (req, res) => {
       return res.status(403).json({ message: "No estás en esta partida" });
     }
 
-    const yaJugo = juego.cartasEnBatalla.some(
-      (c) => c.jugadorId.toString() === jugadorId
+    // Verificar que no haya apostado ya
+    const yaAposto = juego.apuestas.some(
+      (a) => a.jugadorId.toString() === jugadorId
     );
-    if (yaJugo) {
-      return res.status(400).json({ message: "Ya jugaste esta ronda" });
+    if (yaAposto) {
+      return res.status(400).json({ message: "Ya apostaste en esta ronda" });
     }
 
+    // Verificar que la carta esté en su mano
     if (!jugadorEnPartida.selectedCards.includes(cartaId)) {
       return res
         .status(400)
         .json({ message: "Esta carta no está en tu mano de juego" });
     }
 
-    if (!juego.atributoActual) {
-      return res
-        .status(400)
-        .json({ message: "Primero debes seleccionar un atributo" });
-    }
-
-    // Obtener la carta completa desde la base de datos
+    // Obtener información de la carta
     const carta = await Carta.findById(cartaId);
     if (!carta) {
       return res.status(404).json({ message: "Carta no encontrada" });
     }
 
-    // Agregar carta a la batalla con sus atributos
-    juego.cartasEnBatalla.push({
+    // Registrar la apuesta
+    juego.apuestas.push({
       jugadorId: new mongoose.Types.ObjectId(jugadorId),
       cartaId: new mongoose.Types.ObjectId(cartaId),
-      carta, // Incluir el objeto completo de la carta
-      atributo: juego.atributoActual,
+      numero: numero,
+      carta: carta, // Guardamos la carta completa para mostrarla
     });
 
-    await juego.save();
-
-    console.log(`🎴 Jugador ${jugadorId} jugó carta ${cartaId}`);
-
-    res.status(200).json({
-      message: "Carta jugada con éxito",
-      cartasJugadas: juego.cartasEnBatalla.length,
-      totalJugadores: juego.jugadores.filter((j) => j.activo).length,
-    });
-  } catch (error) {
-    console.error("Error al jugar carta:", error);
-    res
-      .status(500)
-      .json({ message: "Error al jugar carta", error: error.message });
-  }
-};
-
-export const seleccionarAtributo = async (req, res) => {
-  try {
-    const { codigo } = req.params;
-    const { jugadorId, atributo } = req.body;
-
-    const juego = await Juego.findOne({ codigo }).populate(
-      "jugadores.jugadorId"
-    );
-    if (!juego) return res.status(404).json({ message: "Juego no encontrado" });
-
-    if (juego.estado !== "jugando") {
-      return res.status(400).json({ message: "La partida no está en curso" });
-    }
-
-    // Verificar que sea el turno del jugador
-    const jugadorActual = juego.jugadores[juego.turnoIdx];
-    if (
-      !jugadorActual ||
-      jugadorActual.jugadorId._id.toString() !== jugadorId
-    ) {
-      return res
-        .status(403)
-        .json({ message: "No es tu turno para elegir atributo" });
-    }
-
-    // Validar atributo
-    const atributosValidos = ["fuerza", "velocidad", "inteligencia", "rareza"];
-    if (!atributosValidos.includes(atributo)) {
-      return res.status(400).json({ message: "Atributo inválido" });
-    }
-
-    // Guardar el atributo seleccionado
-    juego.atributoActual = atributo;
     await juego.save();
 
     console.log(
-      `🎯 Atributo seleccionado: ${atributo} por jugador ${jugadorId}`
+      `🎲 Jugador ${jugadorId} apostó carta ${cartaId} al número ${numero}`
     );
 
-    res.status(200).json({ message: "Atributo seleccionado", atributo });
+    res.status(200).json({
+      message: "Apuesta registrada con éxito",
+      apuestasRegistradas: juego.apuestas.length,
+      totalJugadores: juego.jugadores.filter((j) => j.activo).length,
+    });
   } catch (error) {
-    console.error("Error al seleccionar atributo:", error);
+    console.error("Error al apostar carta:", error);
     res
       .status(500)
-      .json({ message: "Error al seleccionar atributo", error: error.message });
+      .json({ message: "Error al apostar carta", error: error.message });
   }
 };
 
-// Resolver ronda
+// NUEVA LÓGICA: Resolver la ronda con número aleatorio
 export const resolverRonda = async (req, res) => {
   try {
     const { codigo } = req.params;
@@ -179,88 +139,119 @@ export const resolverRonda = async (req, res) => {
       return res.status(404).json({ message: "Juego no encontrado" });
     }
 
-    if (juego.cartasEnBatalla.length !== juego.jugadores.length) {
-      return res
-        .status(400)
-        .json({ message: "No todas las cartas han sido jugadas" });
+    const jugadoresActivos = juego.jugadores.filter((j) => j.activo);
+
+    if (juego.apuestas.length !== jugadoresActivos.length) {
+      return res.status(400).json({
+        message: "No todos los jugadores han apostado",
+        apuestas: juego.apuestas.length,
+        jugadores: jugadoresActivos.length,
+      });
     }
 
-    const atributoActual = juego.atributoActual;
-    if (!atributoActual) {
-      return res
-        .status(400)
-        .json({ message: "No se ha seleccionado un atributo" });
-    }
+    // Generar número ganador aleatorio entre 1 y 10
+    const numeroGanador = Math.floor(Math.random() * 10) + 1;
+    juego.numeroGanador = numeroGanador;
 
-    // Determinar el ganador comparando el atributo seleccionado
-    let ganadorId = null;
-    let maxValor = -Infinity;
-    let perdedorId = null;
-    let cartaPerdedoraId = null;
+    console.log(`🎲 Número ganador: ${numeroGanador}`);
 
-    for (const batalla of juego.cartasEnBatalla) {
-      // Obtener la carta desde la base de datos si no está poblada
-      let carta = batalla.cartaId.carta;
-      if (!carta) {
-        carta = await Carta.findById(batalla.cartaId);
-        if (!carta) {
-          return res.status(404).json({ message: "Carta no encontrada" });
+    // Encontrar ganadores (los que acertaron el número)
+    const ganadores = juego.apuestas.filter((a) => a.numero === numeroGanador);
+    const perdedores = juego.apuestas.filter((a) => a.numero !== numeroGanador);
+
+    let resultado = {
+      numeroGanador,
+      ganadores: [],
+      perdedores: [],
+      mensaje: "",
+    };
+
+    if (ganadores.length === 0) {
+      // NADIE ACERTÓ: Todos recuperan sus cartas
+      resultado.mensaje = "Nadie acertó el número. Todos recuperan sus cartas.";
+      resultado.perdedores = juego.apuestas.map((a) => ({
+        jugadorId: a.jugadorId.toString(),
+        numero: a.numero,
+      }));
+    } else {
+      // HAY GANADORES: Se llevan las cartas de los perdedores
+      for (const ganador of ganadores) {
+        const jugadorGanador = await Jugador.findById(ganador.jugadorId);
+
+        // El ganador recupera su carta apostada (ya está en selectedCards)
+        // Y recibe las cartas de los perdedores
+        const cartasGanadas = [];
+
+        for (const perdedor of perdedores) {
+          const jugadorPerdedor = await Jugador.findById(perdedor.jugadorId);
+
+          // Remover carta del perdedor de su mano
+          jugadorPerdedor.mano = jugadorPerdedor.mano.filter(
+            (c) => c.toString() !== perdedor.cartaId.toString()
+          );
+
+          // Agregar carta a la mano del ganador
+          jugadorGanador.mano.push(perdedor.cartaId);
+          cartasGanadas.push(perdedor.cartaId.toString());
+
+          await jugadorPerdedor.save();
+
+          // Verificar si el perdedor se quedó sin cartas
+          if (jugadorPerdedor.mano.length === 0) {
+            const jugadorEnJuego = juego.jugadores.find(
+              (j) =>
+                j.jugadorId._id.toString() === perdedor.jugadorId.toString()
+            );
+            if (jugadorEnJuego) {
+              jugadorEnJuego.activo = false;
+            }
+          }
         }
+
+        await jugadorGanador.save();
+
+        resultado.ganadores.push({
+          jugadorId: ganador.jugadorId.toString(),
+          numero: ganador.numero,
+          cartasGanadas: cartasGanadas.length,
+        });
       }
-      const valor = carta[atributoActual]; // Accede al valor del atributo (e.g., inteligencia)
-      if (valor > maxValor) {
-        maxValor = valor;
-        ganadorId = batalla.jugadorId.toString();
-        perdedorId = juego.jugadores
-          .find(
-            (j) => j.jugadorId._id.toString() !== batalla.jugadorId.toString()
-          )
-          .jugadorId._id.toString();
-        cartaPerdedoraId = batalla.cartaId.toString();
-      } else if (valor === maxValor) {
-        // Empate
-        return res
-          .status(200)
-          .json({ empate: true, mensaje: "Empate en esta ronda" });
+
+      resultado.perdedores = perdedores.map((p) => ({
+        jugadorId: p.jugadorId.toString(),
+        numero: p.numero,
+      }));
+
+      if (ganadores.length === 1) {
+        resultado.mensaje = `¡Jugador acertó el número ${numeroGanador}! Ganó ${perdedores.length} carta(s)`;
+      } else {
+        resultado.mensaje = `¡${ganadores.length} jugadores acertaron el número ${numeroGanador}!`;
       }
     }
 
-    if (!ganadorId) {
-      return res
-        .status(400)
-        .json({ message: "No se pudo determinar un ganador" });
+    // Limpiar apuestas para la siguiente ronda
+    juego.apuestas = [];
+    juego.numeroGanador = null;
+
+    // Verificar si solo queda un jugador activo
+    const jugadoresActivosRestantes = juego.jugadores.filter((j) => j.activo);
+    if (jugadoresActivosRestantes.length === 1) {
+      juego.estado = "finalizado";
+      juego.ganadorId = jugadoresActivosRestantes[0].jugadorId._id;
+      await juego.save();
+
+      return res.status(200).json({
+        ...resultado,
+        juegoFinalizado: true,
+        ganadorFinal: jugadoresActivosRestantes[0].jugadorId._id.toString(),
+      });
     }
 
-    // Obtener los jugadores involucrados
-    const ganador = await Jugador.findById(ganadorId);
-    const perdedor = await Jugador.findById(perdedorId);
-
-    if (!ganador || !perdedor) {
-      return res.status(404).json({ message: "Jugador no encontrado" });
-    }
-
-    // Eliminar la carta perdedora de la mano del perdedor
-    perdedor.mano = perdedor.mano.filter(
-      (cId) => cId.toString() !== cartaPerdedoraId
-    );
-    await perdedor.save();
-
-    // Añadir la carta perdedora a la mano del ganador
-    ganador.mano.push(cartaPerdedoraId);
-    await ganador.save();
-
-    // Actualizar el juego para el próximo turno
+    // Siguiente turno
     juego.turnoIdx = (juego.turnoIdx + 1) % juego.jugadores.length;
-    juego.cartasEnBatalla = [];
-    juego.atributoActual = null;
-
     await juego.save();
 
-    res.status(200).json({
-      ganadorId,
-      cartasGanadas: 1,
-      mensaje: `Jugador ${ganadorId} ganó la ronda y obtuvo una carta`,
-    });
+    res.status(200).json(resultado);
   } catch (error) {
     console.error("Error al resolver ronda:", error);
     res
