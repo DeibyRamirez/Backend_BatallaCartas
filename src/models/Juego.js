@@ -81,6 +81,11 @@ const juegoSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Jugador",
     },
+    rondasJugadas: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     fechaInicio: {
       type: Date,
       default: Date.now,

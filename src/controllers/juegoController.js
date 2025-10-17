@@ -159,11 +159,15 @@ export const resolverRonda = async (req, res) => {
     const ganadores = juego.apuestas.filter((a) => a.numero === numeroGanador);
     const perdedores = juego.apuestas.filter((a) => a.numero !== numeroGanador);
 
+    // 🔄 Incrementar rondas
+    juego.rondasJugadas += 1;
+
     let resultado = {
       numeroGanador,
       ganadores: [],
       perdedores: [],
       mensaje: "",
+      juegoFinalizado: false,
     };
 
     if (ganadores.length === 0) {
@@ -235,15 +239,21 @@ export const resolverRonda = async (req, res) => {
 
     // Verificar si solo queda un jugador activo
     const jugadoresActivosRestantes = juego.jugadores.filter((j) => j.activo);
-    if (jugadoresActivosRestantes.length === 1) {
+    if (juego.rondasJugadas >= 3 || jugadoresActivosRestantes.length <= 1) {
       juego.estado = "finalizado";
       juego.ganadorId = jugadoresActivosRestantes[0].jugadorId._id;
       await juego.save();
+      resultado.juegoFinalizado = true;
 
       return res.status(200).json({
         ...resultado,
         juegoFinalizado: true,
         ganadorFinal: jugadoresActivosRestantes[0].jugadorId._id.toString(),
+      });
+    } else {
+      juego.estado = "seleccionando";
+      juego.jugadores.forEach((j) => {
+        j.selectedCards = [];
       });
     }
 

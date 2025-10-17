@@ -289,11 +289,11 @@ export const configurarSockets = (io) => {
             });
           }
 
-          if (juego.estado !== "jugando") {
-            return socket.emit("errorEvento", {
-              message: "No puedes apostar en este momento",
-            });
-          }
+          // if (juego.estado !== "jugando") {
+          //   return socket.emit("errorEvento", {
+          //     message: "No puedes apostar en este momento",
+          //   });
+          // }
 
           // Registrar apuesta
           juego.apuestas.push({ jugadorId, cartaId, numero });
@@ -325,19 +325,24 @@ export const configurarSockets = (io) => {
       const numeroGanador = Math.floor(Math.random() * 10) + 1;
       juego.numeroGanador = numeroGanador;
 
+      console.log(
+      `🏆 Número ganador${juego.codigo ? ` (partida ${juego.codigo})` : ""}: ${numeroGanador}`
+      );
+
       const ganadores = juego.apuestas.filter(
-        (a) => a.numero === numeroGanador
+      (a) => a.numero === numeroGanador
       );
       const perdedores = juego.apuestas.filter(
-        (a) => a.numero !== numeroGanador
+      (a) => a.numero !== numeroGanador
       );
 
       let resultado = {
-        numeroGanador,
-        ganadores: [],
-        perdedores: [],
-        mensaje: "",
-        manosActualizadas: {}, // Objeto para almacenar las nuevas manos
+      numeroGanador,
+      ganadores: [],
+      perdedores: [],
+      mensaje: "",
+      manosActualizadas: {}, // Objeto para almacenar las nuevas manos
+      juegoFinalizado: false,
       };
 
       if (ganadores.length === 0) {
@@ -363,36 +368,34 @@ export const configurarSockets = (io) => {
 
           for (const perdedor of perdedores) {
             const jugadorPerdedor = await Jugador.findById(perdedor.jugadorId);
-            if (jugadorPerdedor) {
-              jugadorPerdedor.mano = jugadorPerdedor.mano.filter(
-                (c) => c.toString() !== perdedor.cartaId.toString()
-              );
-              if (
-                jugadorGanador &&
-                !jugadorGanador.mano.includes(perdedor.cartaId)
-              ) {
-                jugadorGanador.mano.push(perdedor.cartaId);
-                cartasGanadas.push(perdedor.cartaId.toString());
-              }
-              await jugadorPerdedor.save();
-              resultado.manosActualizadas[jugadorPerdedor._id.toString()] =
-                jugadorPerdedor.mano.map((c) => c.toString());
 
-              if (jugadorPerdedor.mano.length === 0) {
-                const jugadorEnJuego = juego.jugadores.find(
-                  (j) =>
-                    j.jugadorId._id.toString() === perdedor.jugadorId.toString()
-                );
-                if (jugadorEnJuego) jugadorEnJuego.activo = false;
-              }
+            jugadorPerdedor.mano = jugadorPerdedor.mano.filter(
+              (c) => c.toString() !== perdedor.cartaId.toString()
+            );
+
+            if (
+              jugadorGanador &&
+              !jugadorGanador.mano.includes(perdedor.cartaId)
+            ) {
+              jugadorGanador.mano.push(perdedor.cartaId);
+              cartasGanadas.push(perdedor.cartaId.toString());
+            }
+            await jugadorPerdedor.save();
+            resultado.manosActualizadas[jugadorPerdedor._id.toString()] =
+              jugadorPerdedor.mano.map((c) => c.toString());
+
+            if (jugadorPerdedor.mano.length === 0) {
+              const jugadorEnJuego = juego.jugadores.find(
+                (j) =>
+                  j.jugadorId._id.toString() === perdedor.jugadorId.toString()
+              );
+              if (jugadorEnJuego) jugadorEnJuego.activo = false;
             }
           }
 
-          if (jugadorGanador) {
-            await jugadorGanador.save();
-            resultado.manosActualizadas[jugadorGanador._id.toString()] =
-              jugadorGanador.mano.map((c) => c.toString());
-          }
+          await jugadorGanador.save();
+          resultado.manosActualizadas[jugadorGanador._id.toString()] =
+            jugadorGanador.mano.map((c) => c.toString());
 
           resultado.ganadores.push({
             jugadorId: ganador.jugadorId.toString(),
@@ -416,28 +419,51 @@ export const configurarSockets = (io) => {
       juego.numeroGanador = null;
       juego.turnoIdx = (juego.turnoIdx + 1) % juego.jugadores.length;
 
-      // Verificar si hay ganador de la partida
+      // Incrementar contador de rondas
+      juego.rondasJugadas += 1;
+
+      // Verificar fin de juego
       const jugadoresActivosRestantes = juego.jugadores.filter((j) => j.activo);
-      if (jugadoresActivosRestantes.length === 1) {
+      if (juego.rondasJugadas >= 3 || jugadoresActivosRestantes.length <= 1) {
         juego.estado = "finalizado";
-        juego.ganadorId = jugadoresActivosRestantes[0].jugadorId._id;
+        if (jugadoresActivosRestantes.length <= 1) {
+          juego.ganadorId = jugadoresActivosRestantes[0]?.jugadorId._id;
+        } else {
+          // Elegir ganador por más cartas en mano
+          const ganador = jugadoresActivosRestantes.reduce((max, j) => {
+            return max.jugadorId.mano.length > j.jugadorId.mano.length
+              ? max
+              : j;
+          });
+          juego.ganadorId = ganador.jugadorId._id;
+        }
         await juego.save();
 
         io.to(juego.codigo).emit("juegoFinalizado", {
           ganadorId: juego.ganadorId,
+          mensaje: `¡Juego terminado después de 3 rondas! Ganador: ${juego.ganadorId}`,
         });
+
+        resultado.juegoFinalizado = true;
+        resultado.mensaje +=
+          " Juego finalizado por límite de rondas o jugador restante.";
       } else {
-        // 🔁 Continuar la partida, sin reiniciar selección
-        juego.estado = "jugando";
+        // Preparar nueva ronda: Resetear selección y volver a "seleccionando"
+        juego.estado = "seleccionando";
+        juego.jugadores.forEach((j) => {
+          j.selectedCards = [];
+        });
         await juego.save();
 
-        io.to(juego.codigo).emit("rondaTerminada", {
-          mensaje: `La ronda terminó. Se ha generado un nuevo número. ¡Siguiente ronda!`,
-          numeroGanador: resultado.numeroGanador,
+        io.to(juego.codigo).emit("nuevaRonda", {
+          mensaje: `Ronda ${
+            juego.rondasJugadas + 1
+          }/3: Seleccionen sus cartas de nuevo.`,
+          playCount: juego.playCount,
         });
       }
 
-      // 🔄 Emitir las manos actualizadas
+      // Emitir manos actualizadas
       io.to(juego.codigo).emit(
         "manosActualizadas",
         resultado.manosActualizadas
