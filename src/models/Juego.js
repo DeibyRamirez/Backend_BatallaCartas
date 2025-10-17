@@ -1,7 +1,5 @@
-// models/Juego.js
 import mongoose from "mongoose";
 
-// models/Juego.js
 const juegoSchema = new mongoose.Schema(
   {
     codigo: { type: String, required: true, unique: true },
@@ -10,8 +8,8 @@ const juegoSchema = new mongoose.Schema(
       enum: ["esperando", "seleccionando", "jugando", "finalizado"],
       default: "esperando",
     },
-    maxPlayers: { type: Number },
-    playCount: { type: Number }, // Cartas que cada jugador selecciona
+    maxPlayers: { type: Number, default: 6 },
+    playCount: { type: Number, default: 4 }, // Cartas que cada jugador selecciona
     jugadores: [
       {
         jugadorId: { type: mongoose.Schema.Types.ObjectId, ref: "Jugador" },
@@ -28,6 +26,23 @@ const juegoSchema = new mongoose.Schema(
       },
     ],
     turnoIdx: { type: Number, default: 0 },
+    // 🆕 CAMPO NUEVO: Atributo seleccionado para la ronda actual
+    atributoActual: {
+      type: String,
+      enum: ["fuerza", "velocidad", "inteligencia", "rareza"],
+      default: null,
+    },
+    // 🆕 CAMPO OPCIONAL: Para guardar el ganador al finalizar
+    ganadorId: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: "Jugador",
+      default: null 
+    },
+    // 🆕 CAMPO OPCIONAL: Fecha de finalización
+    fechaFin: { 
+      type: Date,
+      default: null 
+    },
   },
   { timestamps: true }
 );
