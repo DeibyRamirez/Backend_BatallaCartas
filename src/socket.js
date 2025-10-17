@@ -289,20 +289,30 @@ export const configurarSockets = (io) => {
             });
           }
 
-          // Emitir a todos que este jugador apostó (incluyendo el número si es visible)
-          io.to(codigo).emit("cartaApostada", {
-            jugadorId,
-            cartaId,
-            numero,
-          });
+          if (juego.estado !== "jugando") {
+            return socket.emit("errorEvento", {
+              message: "No puedes apostar en este momento",
+            });
+          }
 
-          // Verificar si todos apostaron para resolver automáticamente
-          if (juego.todosApostaron()) {
+          // Registrar apuesta
+          juego.apuestas.push({ jugadorId, cartaId, numero });
+          await juego.save();
+
+          io.to(codigo).emit("cartaApostada", { jugadorId, cartaId, numero });
+
+          // Verificar si todos apostaron
+          const jugadoresActivos = juego.jugadores.filter((j) => j.activo);
+          const todosApostaron = jugadoresActivos.every((j) =>
+            juego.apuestas.some(
+              (a) => a.jugadorId.toString() === j.jugadorId.toString()
+            )
+          );
+
+          if (todosApostaron) {
             const resultado = await resolverRondaInterna(juego);
             io.to(codigo).emit("rondaResuelta", resultado);
           }
-
-          console.log(`✅ Apuesta registrada para ${jugadorId}`);
         } catch (error) {
           console.error("❌ Error en apostarCarta:", error);
           socket.emit("errorEvento", { message: "Error al procesar apuesta" });
@@ -327,6 +337,7 @@ export const configurarSockets = (io) => {
         ganadores: [],
         perdedores: [],
         mensaje: "",
+        manosActualizadas: {}, // Objeto para almacenar las nuevas manos
       };
 
       if (ganadores.length === 0) {
@@ -336,6 +347,15 @@ export const configurarSockets = (io) => {
           jugadorId: a.jugadorId.toString(),
           numero: a.numero,
         }));
+        for (const apuesta of juego.apuestas) {
+          const jugador = await Jugador.findById(apuesta.jugadorId);
+          if (jugador && !jugador.mano.includes(apuesta.cartaId)) {
+            jugador.mano.push(apuesta.cartaId);
+            await jugador.save();
+            resultado.manosActualizadas[jugador._id.toString()] =
+              jugador.mano.map((c) => c.toString());
+          }
+        }
       } else {
         for (const ganador of ganadores) {
           const jugadorGanador = await Jugador.findById(ganador.jugadorId);
@@ -343,23 +363,37 @@ export const configurarSockets = (io) => {
 
           for (const perdedor of perdedores) {
             const jugadorPerdedor = await Jugador.findById(perdedor.jugadorId);
-            jugadorPerdedor.mano = jugadorPerdedor.mano.filter(
-              (c) => c.toString() !== perdedor.cartaId.toString()
-            );
-            jugadorGanador.mano.push(perdedor.cartaId);
-            cartasGanadas.push(perdedor.cartaId.toString());
-            await jugadorPerdedor.save();
-
-            if (jugadorPerdedor.mano.length === 0) {
-              const jugadorEnJuego = juego.jugadores.find(
-                (j) =>
-                  j.jugadorId._id.toString() === perdedor.jugadorId.toString()
+            if (jugadorPerdedor) {
+              jugadorPerdedor.mano = jugadorPerdedor.mano.filter(
+                (c) => c.toString() !== perdedor.cartaId.toString()
               );
-              if (jugadorEnJuego) jugadorEnJuego.activo = false;
+              if (
+                jugadorGanador &&
+                !jugadorGanador.mano.includes(perdedor.cartaId)
+              ) {
+                jugadorGanador.mano.push(perdedor.cartaId);
+                cartasGanadas.push(perdedor.cartaId.toString());
+              }
+              await jugadorPerdedor.save();
+              resultado.manosActualizadas[jugadorPerdedor._id.toString()] =
+                jugadorPerdedor.mano.map((c) => c.toString());
+
+              if (jugadorPerdedor.mano.length === 0) {
+                const jugadorEnJuego = juego.jugadores.find(
+                  (j) =>
+                    j.jugadorId._id.toString() === perdedor.jugadorId.toString()
+                );
+                if (jugadorEnJuego) jugadorEnJuego.activo = false;
+              }
             }
           }
 
-          await jugadorGanador.save();
+          if (jugadorGanador) {
+            await jugadorGanador.save();
+            resultado.manosActualizadas[jugadorGanador._id.toString()] =
+              jugadorGanador.mano.map((c) => c.toString());
+          }
+
           resultado.ganadores.push({
             jugadorId: ganador.jugadorId.toString(),
             numero: ganador.numero,
@@ -382,13 +416,33 @@ export const configurarSockets = (io) => {
       juego.numeroGanador = null;
       juego.turnoIdx = (juego.turnoIdx + 1) % juego.jugadores.length;
 
+      // Verificar si hay ganador de la partida
       const jugadoresActivosRestantes = juego.jugadores.filter((j) => j.activo);
       if (jugadoresActivosRestantes.length === 1) {
         juego.estado = "finalizado";
         juego.ganadorId = jugadoresActivosRestantes[0].jugadorId._id;
+        await juego.save();
+
+        io.to(juego.codigo).emit("juegoFinalizado", {
+          ganadorId: juego.ganadorId,
+        });
+      } else {
+        // 🔁 Continuar la partida, sin reiniciar selección
+        juego.estado = "jugando";
+        await juego.save();
+
+        io.to(juego.codigo).emit("rondaTerminada", {
+          mensaje: `La ronda terminó. Se ha generado un nuevo número. ¡Siguiente ronda!`,
+          numeroGanador: resultado.numeroGanador,
+        });
       }
 
-      await juego.save();
+      // 🔄 Emitir las manos actualizadas
+      io.to(juego.codigo).emit(
+        "manosActualizadas",
+        resultado.manosActualizadas
+      );
+
       return resultado;
     }
 
